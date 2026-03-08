@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Tilt-to-Select</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+      user-select: none;
+    }
+
+    #header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      padding: 12px 16px;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      z-index: 100;
+    }
+
+    #task-label {
+      font-size: 16px;
+      font-weight: bold;
+      color: #e0e0e0;
+    }
+
+    #score-label {
+      font-size: 14px;
+      color: #a0c4ff;
+    }
+
+    #instructions {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 32px;
+      text-align: center;
+    }
+
+    #instructions h2 { font-size: 22px; margin-bottom: 16px; color: #a0c4ff; }
+    #instructions p  { font-size: 15px; line-height: 1.7; color: #ddd; margin-bottom: 12px; }
+
+    #start-btn {
+      margin-top: 24px;
+      padding: 14px 40px;
+      font-size: 18px;
+      border: none;
+      border-radius: 30px;
+      background: #4cc9f0;
+      color: #1a1a2e;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #permission-warning {
+      color: #ff6b6b;
+      font-size: 13px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      padding: 20px;
+      width: 100%;
+      max-width: 420px;
+      margin-top: 60px;
+    }
+
+    .btn {
+      position: relative;
+      height: 90px;
+      border-radius: 16px;
+      background: #16213e;
+      border: 2px solid #2a2a5a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #a0a0cc;
+      overflow: hidden;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .btn.targeted {
+      border-color: #4cc9f0;
+      background: #0f3460;
+      color: #fff;
+    }
+
+    .btn.target-highlight {
+      border-color: #f72585;
+      background: #2a0a2a;
+      color: #f72585;
+      box-shadow: 0 0 12px #f7258566;
+    }
+
+    .btn.activated {
+      border-color: #06d6a0;
+      background: #064a38;
+      color: #06d6a0;
+      box-shadow: 0 0 20px #06d6a099;
+    }
+
+    /* SVG dwell ring overlay */
+    .dwell-ring {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    .dwell-circle {
+      fill: none;
+      stroke: #4cc9f0;
+      stroke-width: 4;
+      stroke-linecap: round;
+      transform-origin: 50% 50%;
+      transform: rotate(-90deg);
+      stroke-dasharray: 0 999;
+      transition: stroke-dasharray 0.05s linear;
+    }
+
+    /* Cursor */
+    #cursor {
+      position: fixed;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(240, 80, 180, 0.85);
+      border: 3px solid white;
+      pointer-events: none;
+      z-index: 50;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 10px rgba(240,80,180,0.7);
+      transition: background 0.1s;
+    }
+
+    #cursor.on-target { background: rgba(76, 201, 240, 0.9); }
+
+    /* Results overlay */
+    #results {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.93);
+      z-index: 300;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      text-align: center;
+    }
+
+    #results h2 { font-size: 22px; color: #06d6a0; margin-bottom: 20px; }
+    #results table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 360px;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    #results th, #results td {
+      border: 1px solid #333;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    #results th { background: #0f3460; color: #a0c4ff; }
+    #results td { background: #16213e; color: #ddd; }
+
+    #export-btn, #restart-btn {
+      margin: 6px;
+      padding: 12px 28px;
+      font-size: 15px;
+      border: none;
+      border-radius: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #export-btn  { background: #4cc9f0; color: #1a1a2e; }
+    #restart-btn { background: #f72585; color: white; }
+
+    #dwell-bar-wrap {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      max-width: 320px;
+      height: 8px;
+      background: #2a2a5a;
+      border-radius: 4px;
+      overflow: hidden;
+      z-index: 60;
+    }
+    #dwell-bar {
+      height: 100%;
+      width: 0%;
+      background: #4cc9f0;
+      border-radius: 4px;
+      transition: width 0.05s linear;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Instructions Screen -->
+<div id="instructions">
+  <h2>🎯 Tilt-to-Select</h2>
+  <p>Tilt your phone to move the <strong style="color:#f050b4">pink cursor</strong> around the screen.</p>
+  <p>Hover over the <strong style="color:#f72585">highlighted target button</strong> and hold steady until the dwell ring fills to activate it.</p>
+  <p>You have <strong>18 trials</strong> to complete. Try to be fast and accurate!</p>
+  <button id="start-btn">Start</button>
+  <p id="permission-warning">⚠️ Motion permission required. Tap Start to allow.</p>
+</div>
+
+<!-- Header -->
+<div id="header">
+  <span id="task-label">Trial: 0 / 18</span>
+  <span id="score-label">✅ 0 &nbsp; ❌ 0</span>
+</div>
+
+<!-- Button Grid -->
+<div id="grid"></div>
+
+<!-- Cursor -->
+<div id="cursor"></div>
+
+<!-- Dwell progress bar at bottom -->
+<div id="dwell-bar-wrap"><div id="dwell-bar"></div></div>
+
+<!-- Results Screen -->
+<div id="results">
+  <h2>Session Complete 🎉</h2>
+  <table id="results-table">
+    <thead><tr><th>Trial</th><th>Target</th><th>Result</th><th>Time (ms)</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button id="export-btn">📋 Copy CSV Data</button>
+  <button id="restart-btn">🔄 Restart</button>
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────
+  const DWELL_TIME   = 800;   // ms to dwell for activation
+  const TOTAL_TRIALS = 18;    // number of trials
+  const TILT_SCALE   = 6;     // cursor pixels per degree of tilt
+  const BUTTON_LABELS = ['Button 1','Button 2','Button 3','Button 4','Button 5','Button 6'];
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let cursorX = window.innerWidth  / 2;
+  let cursorY = window.innerHeight / 2;
+  let gamma0 = null, beta0 = null;   // calibration baseline
+  let dwellTarget   = null;
+  let dwellStart    = null;
+  let currentTarget = null;
+  let trialStartTime= null;
+  let trials        = [];
+  let trialCount    = 0;
+  let successes     = 0;
+  let failures      = 0;
+  let running       = false;
+
+  // ── Build grid ────────────────────────────────────────────────────────────
+  const grid    = document.getElementById('grid');
+  const buttons = [];
+
+  BUTTON_LABELS.forEach((label, i) => {
+    const div = document.createElement('div');
+    div.className = 'btn';
+    div.id = 'btn-' + i;
+    div.innerHTML = `
+      <span>${label}</span>
+      <svg class="dwell-ring" viewBox="0 0 100 100">
+        <circle class="dwell-circle" id="ring-${i}" cx="50" cy="50" r="42"/>
+      </svg>`;
+    grid.appendChild(div);
+    buttons.push(div);
+  });
+
+  // ── Cursor ────────────────────────────────────────────────────────────────
+  const cursorEl   = document.getElementById('cursor');
+  const dwellBar   = document.getElementById('dwell-bar');
+  const taskLabel  = document.getElementById('task-label');
+  const scoreLabel = document.getElementById('score-label');
+
+  function updateCursorPos() {
+    cursorEl.style.left = cursorX + 'px';
+    cursorEl.style.top  = cursorY + 'px';
+  }
+
+  // ── Tilt handler ──────────────────────────────────────────────────────────
+  function onOrientation(e) {
+    if (!running) return;
+    const g = e.gamma ?? 0;
+    const b = e.beta  ?? 0;
+
+    if (gamma0 === null) { gamma0 = g; beta0 = b; }  // calibrate on first reading
+
+    const dx = (g - gamma0) * TILT_SCALE;
+    const dy = (b - beta0)  * TILT_SCALE;
+
+    cursorX = Math.max(14, Math.min(window.innerWidth  - 14, window.innerWidth  / 2 + dx));
+    cursorY = Math.max(70, Math.min(window.innerHeight - 30, window.innerHeight / 2 + dy));
+    updateCursorPos();
+    checkDwell();
+  }
+
+  // ── Hit detection ─────────────────────────────────────────────────────────
+  function getBtnUnderCursor() {
+    const el = document.elementFromPoint(cursorX, cursorY);
+    if (!el) return null;
+    const btn = el.closest('.btn');
+    if (!btn) return null;
+    return parseInt(btn.id.replace('btn-', ''));
+  }
+
+  // ── Dwell logic ───────────────────────────────────────────────────────────
+  function checkDwell() {
+    const hoveredIdx = getBtnUnderCursor();
+
+    // Update cursor style
+    cursorEl.classList.toggle('on-target', hoveredIdx !== null);
+
+    if (hoveredIdx === null) {
+      resetDwell();
+      return;
+    }
+
+    if (dwellTarget !== hoveredIdx) {
+      resetDwell();
+      dwellTarget = hoveredIdx;
+      dwellStart  = performance.now();
+    }
+
+    const elapsed = performance.now() - dwellStart;
+    const pct     = Math.min(elapsed / DWELL_TIME, 1);
+
+    // Animate dwell ring (stroke-dasharray)
+    const circ = 2 * Math.PI * 42;
+    const ring = document.getElementById('ring-' + hoveredIdx);
+    ring.style.strokeDasharray = `${pct * circ} ${circ}`;
+    dwellBar.style.width = (pct * 100) + '%';
+
+    buttons[hoveredIdx].classList.add('targeted');
+
+    if (elapsed >= DWELL_TIME) {
+      activateButton(hoveredIdx);
+    }
+  }
+
+  function resetDwell() {
+    if (dwellTarget !== null) {
+      const ring = document.getElementById('ring-' + dwellTarget);
+      if (ring) ring.style.strokeDasharray = '0 999';
+      buttons[dwellTarget].classList.remove('targeted');
+    }
+    dwellTarget = null;
+    dwellStart  = null;
+    dwellBar.style.width = '0%';
+  }
+
+  // ── Button activation ─────────────────────────────────────────────────────
+  function activateButton(idx) {
+    if (!running) return;
+    running = false;
+
+    const elapsed = performance.now() - trialStartTime;
+    const correct = idx === currentTarget;
+
+    // Visual feedback
+    buttons[idx].classList.remove('targeted');
+    buttons[idx].classList.add('activated');
+    if (correct) buttons[idx].style.borderColor = '#06d6a0';
+    else         buttons[idx].style.borderColor = '#ff6b6b';
+
+    if ('vibrate' in navigator) navigator.vibrate(correct ? [80] : [40, 30, 40]);
+
+    // Record trial
+    trials.push({
+      trial:   trialCount + 1,
+      target:  BUTTON_LABELS[currentTarget],
+      result:  correct ? 'HIT' : 'MISS',
+      time_ms: Math.round(elapsed)
+    });
+
+    if (correct) successes++; else failures++;
+    trialCount++;
+    updateScoreUI();
+
+    resetDwell();
+    dwellBar.style.width = '0%';
+
+    setTimeout(() => {
+      buttons[idx].classList.remove('activated');
+      buttons[idx].style.borderColor = '';
+      if (trialCount >= TOTAL_TRIALS) {
+        showResults();
+      } else {
+        nextTrial();
+      }
+    }, 700);
+  }
+
+  // ── Trial management ──────────────────────────────────────────────────────
+  function nextTrial() {
+    // Pick random target (avoid same as last)
+    let t;
+    do { t = Math.floor(Math.random() * buttons.length); } while (t === currentTarget);
+    currentTarget = t;
+
+    buttons.forEach((b, i) => {
+      b.classList.remove('target-highlight');
+      if (i === currentTarget) b.classList.add('target-highlight');
+    });
+
+    trialStartTime = performance.now();
+    running = true;
+    updateScoreUI();
+  }
+
+  function updateScoreUI() {
+    taskLabel.textContent  = `Trial: ${trialCount} / ${TOTAL_TRIALS}`;
+    scoreLabel.textContent = `✅ ${successes}  ❌ ${failures}`;
+  }
+
+  // ── Results ───────────────────────────────────────────────────────────────
+  function showResults() {
+    const tbody = document.querySelector('#results-table tbody');
+    tbody.innerHTML = '';
+    trials.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${t.trial}</td><td>${t.target}</td>
+        <td style="color:${t.result==='HIT'?'#06d6a0':'#ff6b6b'}">${t.result}</td>
+        <td>${t.time_ms}</td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('results').style.display = 'flex';
+  }
+
+  document.getElementById('export-btn').addEventListener('click', () => {
+    const header = 'Trial,Target,Result,Time_ms\n';
+    const rows   = trials.map(t => `${t.trial},${t.target},${t.result},${t.time_ms}`).join('\n');
+    const csv    = header + rows;
+    navigator.clipboard.writeText(csv).then(() => alert('CSV copied to clipboard!'));
+  });
+
+  document.getElementById('restart-btn').addEventListener('click', () => location.reload());
+
+  // ── Start / Permission ────────────────────────────────────────────────────
+  function startSession() {
+    gamma0 = null; beta0 = null;
+    cursorX = window.innerWidth  / 2;
+    cursorY = window.innerHeight / 2;
+    updateCursorPos();
+    document.getElementById('instructions').style.display = 'none';
+    nextTrial();
+  }
+
+  document.getElementById('start-btn').addEventListener('click', () => {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS 13+ requires explicit permission
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', onOrientation);
+            startSession();
+          } else {
+            document.getElementById('permission-warning').style.display = 'block';
+            document.getElementById('permission-warning').textContent =
+              '⚠️ Motion permission denied. Please allow in Settings.';
+          }
+        }).catch(console.error);
+    } else {
+      window.addEventListener('deviceorientation', onOrientation);
+      startSession();
+    }
+  });
+
+  // Recalibrate on double-tap anywhere
+  document.body.addEventListener('dblclick', () => { gamma0 = null; beta0 = null; });
+</script>
+</body>
+</html>
